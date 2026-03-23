@@ -1,0 +1,928 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <title>제주 마피아 - 플레이어</title>
+  <link rel="stylesheet" href="/shared/styles/common.css">
+  <style>
+    body {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      padding: 16px;
+    }
+    .join-form {
+      width: 100%;
+      max-width: 360px;
+    }
+    .join-form h1 {
+      text-align: center;
+      margin-bottom: 24px;
+      font-size: 28px;
+    }
+    .join-form .subtitle {
+      text-align: center;
+      color: var(--text-secondary);
+      margin-bottom: 24px;
+      font-size: 14px;
+    }
+    .form-group {
+      margin-bottom: 16px;
+    }
+    .room-code-input {
+      text-align: center;
+      font-size: 24px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+    }
+    #lobby-view {
+      text-align: center;
+      width: 100%;
+      max-width: 360px;
+    }
+    #lobby-view h2 {
+      margin-bottom: 8px;
+    }
+    .waiting-text {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-top: 16px;
+    }
+    .waiting-dot {
+      animation: blink 1.4s infinite;
+    }
+    .waiting-dot:nth-child(2) { animation-delay: 0.2s; }
+    .waiting-dot:nth-child(3) { animation-delay: 0.4s; }
+    @keyframes blink {
+      0%, 100% { opacity: 0.2; }
+      50% { opacity: 1; }
+    }
+    #game-view {
+      width: 100%;
+      max-width: 400px;
+    }
+    .error-msg {
+      color: var(--danger);
+      text-align: center;
+      font-size: 14px;
+      margin-top: 8px;
+      min-height: 20px;
+    }
+    .player-list-lobby {
+      margin-top: 16px;
+      text-align: left;
+    }
+
+    /* 능력 결과 */
+    .ability-result-card {
+      background: var(--surface);
+      border: 1px solid var(--primary);
+      border-radius: 8px;
+      padding: 12px;
+      margin-top: 8px;
+      animation: fadeIn 0.3s ease;
+    }
+    .ability-result-card .result-label {
+      font-size: 12px;
+      color: var(--primary);
+      font-weight: 600;
+      margin-bottom: 4px;
+    }
+    .ability-result-card .result-message {
+      font-size: 15px;
+      font-weight: 700;
+    }
+    .result-mafia { color: var(--danger); }
+    .result-citizen { color: var(--success); }
+    .result-blocked { color: var(--warning); }
+    .result-info { color: #60a5fa; }
+
+    /* 침묵 배너 */
+    .silence-banner {
+      background: var(--warning);
+      color: #000;
+      padding: 8px 12px;
+      border-radius: 8px;
+      text-align: center;
+      font-weight: 700;
+      font-size: 14px;
+      margin-bottom: 8px;
+      animation: pulse 2s infinite;
+    }
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.7; }
+    }
+
+    /* 이주민 헌신 버튼 */
+    .immigrant-panel {
+      background: var(--surface);
+      border: 2px dashed var(--primary);
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 8px;
+      text-align: center;
+    }
+    .immigrant-panel p {
+      font-size: 13px;
+      color: var(--text-secondary);
+      margin-bottom: 8px;
+    }
+
+    /* 더블 투표 */
+    .double-vote-btn {
+      background: var(--warning);
+      color: #000;
+      border: none;
+      padding: 6px 12px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 13px;
+      cursor: pointer;
+      margin-bottom: 8px;
+    }
+    .double-vote-btn:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    /* 이장 부씨 정보 */
+    .known-citizen-info {
+      background: var(--surface);
+      border: 1px solid var(--success);
+      border-radius: 8px;
+      padding: 8px 12px;
+      margin-top: 8px;
+      font-size: 13px;
+    }
+    .known-citizen-info strong { color: var(--success); }
+
+    @keyframes fadeIn {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
+    }
+
+    /* 게임 오버 역할 공개 */
+    .role-reveal-list {
+      list-style: none;
+      padding: 0;
+      margin: 12px 0 0;
+      text-align: left;
+    }
+    .role-reveal-list li {
+      display: flex;
+      justify-content: space-between;
+      padding: 4px 0;
+      border-bottom: 1px solid rgba(255,255,255,0.1);
+      font-size: 14px;
+    }
+    .role-reveal-list .reveal-dead {
+      opacity: 0.5;
+      text-decoration: line-through;
+    }
+  </style>
+</head>
+<body>
+  <!-- Join Form -->
+  <div id="join-view" class="join-form">
+    <h1>제주 마피아</h1>
+    <p class="subtitle">방 코드와 이름을 입력하세요</p>
+    <div class="form-group">
+      <label class="label">방 코드</label>
+      <input type="text" id="input-room-code" class="room-code-input" maxlength="4" placeholder="ABCD" autocomplete="off">
+    </div>
+    <div class="form-group">
+      <label class="label">이름</label>
+      <input type="text" id="input-name" maxlength="10" placeholder="이름을 입력하세요" autocomplete="off">
+    </div>
+    <button id="btn-join" class="btn btn-primary">참여하기</button>
+    <p id="join-error" class="error-msg"></p>
+  </div>
+
+  <!-- Lobby Waiting -->
+  <div id="lobby-view" class="hidden">
+    <div class="card">
+      <h2 id="player-name-display"></h2>
+      <p class="waiting-text">
+        게임 시작을 기다리는 중
+        <span class="waiting-dot">.</span>
+        <span class="waiting-dot">.</span>
+        <span class="waiting-dot">.</span>
+      </p>
+    </div>
+    <div class="card player-list-lobby">
+      <h3 class="mb-8">참가자 <span id="lobby-player-count">0</span>명</h3>
+      <ul id="lobby-player-list" class="player-list"></ul>
+    </div>
+  </div>
+
+  <!-- Game View -->
+  <div id="game-view" class="hidden" style="width:100%;max-width:400px;">
+    <!-- Phase Banner + Timer -->
+    <div id="game-phase-banner" class="phase-banner phase-day">로비</div>
+    <div id="game-timer" class="timer-display mb-16" style="font-size:48px;">--:--</div>
+
+    <!-- Skip Vote -->
+    <div id="skip-vote-wrapper" class="hidden" style="text-align:center;margin-bottom:8px;">
+      <button id="btn-skip-vote" class="btn btn-secondary btn-sm" onclick="requestSkip()" style="font-size:13px;">
+        스킵 요청
+      </button>
+      <span id="skip-count" style="font-size:12px;color:var(--text-secondary);margin-left:8px;"></span>
+    </div>
+
+    <!-- Silence Banner -->
+    <div id="silence-banner" class="silence-banner hidden">
+      발언이 금지되었습니다 (이번 낮 토론)
+    </div>
+
+    <!-- Immigrant Commit Panel -->
+    <div id="immigrant-panel" class="immigrant-panel hidden">
+      <p>시민팀으로 헌신하시겠습니까? (되돌릴 수 없음)<br>헌신 시 순경 능력 1회 획득</p>
+      <button id="btn-immigrant-commit" class="btn btn-primary btn-sm" onclick="commitImmigrant()">헌신하기</button>
+    </div>
+
+    <!-- Role Card -->
+    <div id="role-card" class="card hidden">
+      <div class="flex justify-between items-center mb-8">
+        <h3 id="role-name">역할</h3>
+        <span id="role-team-badge" class="badge">팀</span>
+      </div>
+      <p id="role-desc" style="font-size:14px;color:var(--text-secondary);"></p>
+      <div id="role-team-members" class="hidden mt-8" style="font-size:13px;color:var(--warning);">
+        <strong>마피아 동료:</strong> <span id="team-members-list"></span>
+      </div>
+      <div id="role-known-citizen" class="known-citizen-info hidden">
+        <strong>확인된 시민:</strong> <span id="known-citizen-text"></span>
+      </div>
+    </div>
+
+    <!-- Double Vote Button -->
+    <div id="double-vote-wrapper" class="hidden text-center mb-8">
+      <button id="btn-double-vote" class="double-vote-btn" onclick="activateDoubleVote()">
+        더블 투표 활성화 (1회)
+      </button>
+    </div>
+
+    <!-- Vote Panel -->
+    <div id="vote-panel" class="card hidden">
+      <h3 class="mb-8" id="vote-title">투표</h3>
+      <div id="vote-list" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <p id="vote-status" class="mt-8 text-center" style="font-size:13px;color:var(--text-secondary);"></p>
+    </div>
+
+    <!-- Kill/Save Vote -->
+    <div id="kill-save-panel" class="card hidden">
+      <h3 class="mb-8 text-center" id="kill-save-target">죽여/살려</h3>
+      <div style="display:flex;gap:8px;">
+        <button class="btn btn-danger" onclick="castKillSave('kill')">죽여</button>
+        <button class="btn btn-secondary" onclick="castKillSave('save')">살려</button>
+      </div>
+    </div>
+
+    <!-- Ability Panel -->
+    <div id="ability-panel" class="card hidden">
+      <h3 class="mb-8" id="ability-title">능력 사용</h3>
+      <p id="ability-desc" style="font-size:14px;color:var(--text-secondary);margin-bottom:12px;"></p>
+      <div id="ability-targets" style="display:flex;flex-direction:column;gap:8px;"></div>
+      <button id="btn-ability-skip" class="btn btn-secondary btn-sm mt-8 hidden" onclick="skipAbility()">건너뛰기</button>
+      <p id="ability-status" class="mt-8 text-center" style="font-size:13px;color:var(--success);"></p>
+    </div>
+
+    <!-- Ability Result (개인 결과) -->
+    <div id="ability-result-panel" class="hidden"></div>
+
+    <!-- Dawn Results -->
+    <div id="dawn-panel" class="card hidden">
+      <h3 class="mb-8">밤 결과</h3>
+      <div id="dawn-results"></div>
+    </div>
+
+    <!-- Vote Result -->
+    <div id="vote-result-panel" class="card hidden">
+      <h3 class="mb-8 text-center">투표 결과</h3>
+      <p id="vote-result-text" class="text-center" style="font-size:18px;font-weight:700;"></p>
+    </div>
+
+    <!-- Game Over -->
+    <div id="gameover-panel" class="card hidden">
+      <h2 class="text-center mb-8">게임 종료</h2>
+      <p id="gameover-winner" class="text-center" style="font-size:24px;font-weight:800;"></p>
+      <p id="gameover-reason" class="text-center mt-8" style="color:var(--text-secondary);"></p>
+      <ul id="gameover-role-list" class="role-reveal-list"></ul>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let myPlayerId = null;
+    let myName = '';
+    let myRole = null;
+    let myTeam = null;
+    let myRoleData = null;
+    let isSilenced = false;
+    let doubleVoteAvailable = false;
+    let immigrantCommitted = false;
+
+    // Elements
+    const joinView = document.getElementById('join-view');
+    const lobbyView = document.getElementById('lobby-view');
+    const gameView = document.getElementById('game-view');
+    const inputRoomCode = document.getElementById('input-room-code');
+    const inputName = document.getElementById('input-name');
+    const btnJoin = document.getElementById('btn-join');
+    const joinError = document.getElementById('join-error');
+
+    // Auto-fill room code from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = urlParams.get('room');
+    if (roomFromUrl) {
+      inputRoomCode.value = roomFromUrl.toUpperCase();
+      inputRoomCode.readOnly = true;
+      inputRoomCode.style.opacity = '0.7';
+      inputName.focus();
+    }
+
+    // Join
+    btnJoin.addEventListener('click', () => {
+      const roomCode = inputRoomCode.value.trim().toUpperCase();
+      const name = inputName.value.trim();
+
+      if (!roomCode || roomCode.length !== 4) {
+        joinError.textContent = '방 코드 4자리를 입력하세요.';
+        return;
+      }
+      if (!name) {
+        joinError.textContent = '이름을 입력하세요.';
+        return;
+      }
+
+      myName = name;
+      btnJoin.disabled = true;
+      btnJoin.textContent = '참여 중...';
+      socket.emit('lobby:join', { roomCode, playerName: name });
+    });
+
+    inputName.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btnJoin.click();
+    });
+
+    // Join success
+    socket.on('connection:registered', (data) => {
+      if (data.success) {
+        myPlayerId = data.playerId;
+        sessionStorage.setItem('playerId', data.playerId);
+        sessionStorage.setItem('roomCode', data.roomCode);
+
+        joinView.classList.add('hidden');
+        lobbyView.classList.remove('hidden');
+        document.getElementById('player-name-display').textContent = myName;
+      }
+    });
+
+    // Player list update
+    let currentPlayers = [];
+    let selectedTargets = [];
+    let currentAbility = null;
+
+    socket.on('room:player_list', (players) => {
+      currentPlayers = players;
+
+      const listEl = document.getElementById('lobby-player-list');
+      const countEl = document.getElementById('lobby-player-count');
+      if (listEl && countEl) {
+        countEl.textContent = players.length;
+        listEl.innerHTML = '';
+        players.forEach(p => {
+          const li = document.createElement('li');
+          li.className = 'player-item';
+          const isMe = p.playerId === myPlayerId;
+          const statusClass = p.isAlive
+            ? (p.isConnected ? 'status-connected' : 'status-disconnected')
+            : 'status-disconnected';
+          const statusText = p.isAlive
+            ? (p.isConnected ? '접속' : '끊김')
+            : '사망';
+          li.innerHTML = `
+            <span class="player-name ${!p.isAlive ? 'reveal-dead' : ''}">${escapeHtml(p.name)}${isMe ? ' (나)' : ''}${p.isSilenced ? ' [침묵]' : ''}</span>
+            <span class="player-status ${statusClass}">${statusText}</span>
+          `;
+          listEl.appendChild(li);
+        });
+      }
+    });
+
+    // ═══════════════════════════════════════════
+    //  게임 시작 + 역할 배정
+    // ═══════════════════════════════════════════
+
+    socket.on('game:started', () => {
+      lobbyView.classList.add('hidden');
+      gameView.classList.remove('hidden');
+    });
+
+    const ROLE_NAMES = {
+      boss: '돌하르방 보스', wind_deceiver: '제주 바람쟁이', smuggler: '감귤 밀수업자',
+      agitator: '선과장 선동꾼', assassin: '돌하르방 암살자', goblin: '제주 도깨비',
+      shield: '돌하르방 액막이', mafia_shaman: '제주 선무당',
+      doctor: '곶자왈 의사', police: '곶자왈 순경', socialite: '곶자왈 마당발',
+      coast_guard: '제주 해경', protector_grandma: '설문대 할망', blocker_grandma: '김만덕 할망',
+      double_voter: '오일장 고씨', fisherman: '어부 양씨', village_head: '이장 부씨',
+      mongsengi: '아랫마을 몽생이', idler: '윗마을 한량', council_member: '제주 도의원',
+      reporter: '제주 일보 기자', fortune_teller: '제주 심방', immigrant: '이주민',
+      citizen_basic: '시민',
+    };
+
+    socket.on('game:role_assigned', (data) => {
+      myRole = data.role;
+      myTeam = data.team;
+      myRoleData = data;
+
+      const roleCard = document.getElementById('role-card');
+      roleCard.classList.remove('hidden');
+      document.getElementById('role-name').textContent = ROLE_NAMES[data.role] || data.role;
+      document.getElementById('role-desc').textContent = data.description;
+
+      const badge = document.getElementById('role-team-badge');
+      if (data.team === 'mafia') {
+        badge.textContent = '마피아';
+        badge.className = 'badge badge-mafia';
+      } else {
+        badge.textContent = '시민';
+        badge.className = 'badge badge-citizen';
+      }
+
+      // 마피아 동료
+      if (data.teamMembers && data.teamMembers.length > 0) {
+        document.getElementById('role-team-members').classList.remove('hidden');
+        document.getElementById('team-members-list').textContent =
+          data.teamMembers.map(m => m.name).join(', ');
+      }
+
+      // 이장 부씨: 시민 정보
+      if (data.knownCitizen) {
+        const knownDiv = document.getElementById('role-known-citizen');
+        knownDiv.classList.remove('hidden');
+        document.getElementById('known-citizen-text').textContent =
+          `${data.knownCitizen.name} (${ROLE_NAMES[data.knownCitizen.role] || data.knownCitizen.role})`;
+      }
+
+      // 더블 투표 가능 여부 (선동꾼, 오일장 고씨)
+      if (data.role === 'agitator' || data.role === 'double_voter') {
+        doubleVoteAvailable = true;
+      }
+    });
+
+    // ═══════════════════════════════════════════
+    //  페이즈 전환
+    // ═══════════════════════════════════════════
+
+    const phaseNames = {
+      lobby: '로비', day_discussion: '낮 토론', day_vote: '투표',
+      day_vote_revote: '재투표', day_kill_save_vote: '죽여/살려',
+      day_last_words: '최후 변론', night_abilities: '밤',
+      night_reporter_investigation: '기자 취재',
+      dawn_reveal: '결과 발표', game_over: '게임 종료',
+    };
+
+    socket.on('phase:changed', (phase) => {
+      const banner = document.getElementById('game-phase-banner');
+      banner.textContent = phaseNames[phase.type] || phase.type;
+
+      if (phase.type.startsWith('night')) {
+        banner.className = 'phase-banner phase-night';
+      } else if (phase.type.includes('vote')) {
+        banner.className = 'phase-banner phase-vote';
+      } else {
+        banner.className = 'phase-banner phase-day';
+      }
+
+      document.getElementById('game-timer').textContent = formatTime(phase.timerRemaining);
+
+      // 패널 관리
+      hideActionPanels();
+
+      // 스킵 투표 버튼 (낮 토론, 최후 변론, 새벽 발표)
+      const skippablePhases = ['day_discussion', 'day_last_words', 'dawn_reveal'];
+      const skipWrapper = document.getElementById('skip-vote-wrapper');
+      if (skippablePhases.includes(phase.type)) {
+        skipWrapper.classList.remove('hidden');
+        document.getElementById('btn-skip-vote').disabled = false;
+        document.getElementById('btn-skip-vote').textContent = '스킵 요청';
+        document.getElementById('skip-count').textContent = '';
+      } else {
+        skipWrapper.classList.add('hidden');
+      }
+
+      // 침묵 배너 (낮 토론 중)
+      if (phase.type === 'day_discussion' && isSilenced) {
+        document.getElementById('silence-banner').classList.remove('hidden');
+      } else {
+        document.getElementById('silence-banner').classList.add('hidden');
+      }
+
+      // 이주민 헌신 패널 (낮 토론 중)
+      if (phase.type === 'day_discussion' && myRole === 'immigrant' && !immigrantCommitted) {
+        document.getElementById('immigrant-panel').classList.remove('hidden');
+      } else {
+        document.getElementById('immigrant-panel').classList.add('hidden');
+      }
+
+      // 새벽 결과 패널
+      if (phase.type === 'dawn_reveal') {
+        document.getElementById('dawn-panel').classList.remove('hidden');
+        document.getElementById('ability-result-panel').classList.remove('hidden');
+      }
+
+      // 새 라운드 시작 시 초기화
+      if (phase.type === 'day_discussion') {
+        isSilenced = false;
+        document.getElementById('ability-result-panel').innerHTML = '';
+        document.getElementById('ability-result-panel').classList.add('hidden');
+      }
+    });
+
+    socket.on('phase:timer_tick', (remaining) => {
+      document.getElementById('game-timer').textContent = formatTime(remaining);
+    });
+
+    // ═══════════════════════════════════════════
+    //  투표
+    // ═══════════════════════════════════════════
+
+    socket.on('vote:opened', (data) => {
+      hideActionPanels();
+
+      if (data.isKillSaveVote) {
+        const panel = document.getElementById('kill-save-panel');
+        panel.classList.remove('hidden');
+        const targetPlayer = currentPlayers.find(p => p.playerId === data.eligibleTargets[0]);
+        document.getElementById('kill-save-target').textContent =
+          `${targetPlayer ? targetPlayer.name : '???'} - 죽여/살려`;
+      } else {
+        // 더블 투표 버튼
+        if (doubleVoteAvailable) {
+          document.getElementById('double-vote-wrapper').classList.remove('hidden');
+        }
+
+        const panel = document.getElementById('vote-panel');
+        panel.classList.remove('hidden');
+        document.getElementById('vote-title').textContent = data.isRevote ? '재투표' : '투표';
+
+        const listEl = document.getElementById('vote-list');
+        listEl.innerHTML = '';
+        data.eligibleTargets.forEach(targetId => {
+          const p = currentPlayers.find(pl => pl.playerId === targetId);
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-secondary';
+          btn.textContent = p ? p.name : targetId;
+          btn.onclick = () => castVote(targetId, btn);
+          listEl.appendChild(btn);
+        });
+      }
+    });
+
+    socket.on('vote:count_update', (data) => {
+      document.getElementById('vote-status').textContent =
+        `${data.totalVoted} / ${data.totalVoters}명 투표 완료`;
+    });
+
+    socket.on('vote:result', (data) => {
+      hideActionPanels();
+      const panel = document.getElementById('vote-result-panel');
+      panel.classList.remove('hidden');
+      const text = document.getElementById('vote-result-text');
+
+      if (data.outcome === 'kill') {
+        text.textContent = `${data.eliminatedName || '???'}님이 처형되었습니다.`;
+        text.style.color = 'var(--danger)';
+      } else if (data.outcome === 'save') {
+        text.textContent = '아무도 처형되지 않았습니다.';
+        text.style.color = 'var(--success)';
+      } else if (data.outcome === 'tie') {
+        text.textContent = '동률! 재투표를 진행합니다.';
+        text.style.color = 'var(--warning)';
+      }
+
+      setTimeout(() => { panel.classList.add('hidden'); }, 3000);
+    });
+
+    // ═══════════════════════════════════════════
+    //  밤 능력
+    // ═══════════════════════════════════════════
+
+    const ABILITY_NAMES = {
+      boss_kill: '사살', wind_deceive: '바람', protector_protect: '보호',
+      doctor_save: '치료', police_investigate: '조사', socialite_compare: '비교',
+      coast_guard_kill: '체포', blocker_block: '봉인', fisherman_check: '확인',
+      goblin_silence: '침묵', mafia_shaman_block: '봉인', assassin_kill: '암살',
+      fortune_teller_count: '점', reporter_investigate: '취재',
+      immigrant_investigate: '조사 (헌신 보상)',
+      agitator_double_vote: '선동', double_vote: '추가 투표',
+    };
+
+    socket.on('ability:prompt', (data) => {
+      currentAbility = data;
+      selectedTargets = [];
+      const panel = document.getElementById('ability-panel');
+      panel.classList.remove('hidden');
+
+      document.getElementById('ability-title').textContent = ABILITY_NAMES[data.abilityId] || data.abilityId;
+      document.getElementById('ability-desc').textContent = data.description;
+      document.getElementById('ability-status').textContent = '';
+
+      if (data.isOptional) {
+        document.getElementById('btn-ability-skip').classList.remove('hidden');
+      } else {
+        document.getElementById('btn-ability-skip').classList.add('hidden');
+      }
+
+      const targetsEl = document.getElementById('ability-targets');
+      targetsEl.innerHTML = '';
+
+      if (data.targetCount === 0) {
+        const btn = document.createElement('button');
+        btn.className = 'btn btn-primary';
+        btn.textContent = '능력 사용';
+        btn.onclick = () => {
+          socket.emit('ability:use', { abilityId: data.abilityId, targets: [] });
+          btn.disabled = true;
+          btn.textContent = '사용 완료';
+        };
+        targetsEl.appendChild(btn);
+      } else {
+        data.eligibleTargets.forEach(target => {
+          const btn = document.createElement('button');
+          btn.className = 'btn btn-secondary';
+          btn.textContent = target.name;
+          btn.onclick = () => selectAbilityTarget(target.playerId, btn, data);
+          targetsEl.appendChild(btn);
+        });
+      }
+    });
+
+    socket.on('ability:used_confirmation', () => {
+      document.getElementById('ability-status').textContent = '능력 사용 완료! 결과를 기다리는 중...';
+    });
+
+    // 능력 결과 수신 (개인)
+    socket.on('ability:result', (data) => {
+      const resultPanel = document.getElementById('ability-result-panel');
+      resultPanel.classList.remove('hidden');
+
+      const card = document.createElement('div');
+      card.className = 'ability-result-card';
+
+      const RESULT_NAMES = {
+        police_investigate: '조사 결과',
+        immigrant_investigate: '조사 결과',
+        socialite_compare: '비교 결과',
+        fortune_teller_count: '심방의 점괘',
+        fisherman_check: '어부의 확인',
+        coast_guard_kill: '해경 체포 결과',
+        reporter_investigate: '기자 취재 결과',
+      };
+
+      const label = RESULT_NAMES[data.abilityId] || '능력 결과';
+
+      let messageClass = 'result-info';
+      if (data.blocked) {
+        messageClass = 'result-blocked';
+      } else if (data.result === 'mafia' || data.wasMafia === true) {
+        messageClass = 'result-mafia';
+      } else if (data.result === 'citizen' || data.wasMafia === false) {
+        messageClass = 'result-citizen';
+      } else if (data.success === true) {
+        messageClass = 'result-citizen';
+      } else if (data.success === false) {
+        messageClass = 'result-mafia';
+      }
+
+      card.innerHTML = `
+        <div class="result-label">${escapeHtml(label)}</div>
+        <div class="result-message ${messageClass}">${escapeHtml(data.message)}</div>
+      `;
+      resultPanel.appendChild(card);
+
+      // 능력 패널의 상태도 업데이트
+      const statusEl = document.getElementById('ability-status');
+      statusEl.textContent = data.message;
+    });
+
+    // ═══════════════════════════════════════════
+    //  스킵 투표
+    // ═══════════════════════════════════════════
+
+    socket.on('skip:count_update', (data) => {
+      document.getElementById('skip-count').textContent = `${data.current} / ${data.needed}명 동의`;
+    });
+
+    socket.on('skip:approved', () => {
+      document.getElementById('skip-count').textContent = '스킵!';
+    });
+
+    // ═══════════════════════════════════════════
+    //  침묵 + 이주민
+    // ═══════════════════════════════════════════
+
+    socket.on('silence:you_are_silenced', () => {
+      isSilenced = true;
+    });
+
+    socket.on('silence:list', (_silencedPlayers) => {
+      // 전체 침묵 목록 (필요 시 활용)
+    });
+
+    socket.on('immigrant:committed', (data) => {
+      if (data.success) {
+        immigrantCommitted = true;
+        document.getElementById('immigrant-panel').classList.add('hidden');
+        document.getElementById('role-desc').textContent =
+          '시민팀에 헌신했습니다. 다음 밤에 순경 능력을 1회 사용할 수 있습니다.';
+      }
+    });
+
+    // ═══════════════════════════════════════════
+    //  새벽 결과
+    // ═══════════════════════════════════════════
+
+    socket.on('dawn:results', (data) => {
+      hideActionPanels();
+      const panel = document.getElementById('dawn-panel');
+      panel.classList.remove('hidden');
+      const resultsEl = document.getElementById('dawn-results');
+
+      let html = '';
+
+      if (data.deaths.length === 0 && !data.saved) {
+        html += '<p style="color:var(--success);">평화로운 밤이었습니다.</p>';
+      } else {
+        if (data.deaths.length > 0) {
+          html += data.deaths.map(d =>
+            `<p style="color:var(--danger);font-weight:700;">${escapeHtml(d.playerName)}님이 ${escapeHtml(d.cause)}</p>`
+          ).join('');
+        }
+        if (data.saved) {
+          html += '<p style="color:var(--success);margin-top:8px;">누군가가 구출되었습니다!</p>';
+        }
+      }
+
+      // 침묵된 플레이어
+      if (data.silencedPlayers && data.silencedPlayers.length > 0) {
+        html += '<p style="color:var(--warning);margin-top:8px;">';
+        html += data.silencedPlayers.map(sp => escapeHtml(sp.name)).join(', ');
+        html += '의 발언이 금지되었습니다.</p>';
+      }
+
+      // 기자 취재 결과 (공개)
+      if (data.reporterResult) {
+        html += `<p style="color:#60a5fa;margin-top:8px;font-weight:700;">
+          [기자 취재] ${escapeHtml(data.reporterResult.message)}
+        </p>`;
+      }
+
+      resultsEl.innerHTML = html;
+      document.getElementById('ability-result-panel').classList.remove('hidden');
+    });
+
+    // ═══════════════════════════════════════════
+    //  게임 종료
+    // ═══════════════════════════════════════════
+
+    socket.on('game:over', (data) => {
+      hideActionPanels();
+      const panel = document.getElementById('gameover-panel');
+      panel.classList.remove('hidden');
+      const winnerEl = document.getElementById('gameover-winner');
+      winnerEl.textContent = data.winner === 'mafia' ? '마피아 승리!' : '시민 승리!';
+      winnerEl.style.color = data.winner === 'mafia' ? 'var(--danger)' : 'var(--success)';
+      document.getElementById('gameover-reason').textContent = data.reason;
+
+      // 역할 공개
+      if (data.gameResult && data.gameResult.playerResults) {
+        const listEl = document.getElementById('gameover-role-list');
+        listEl.innerHTML = '';
+        data.gameResult.playerResults.forEach(pr => {
+          const li = document.createElement('li');
+          li.className = pr.survived ? '' : 'reveal-dead';
+          const teamEmoji = pr.team === 'mafia' ? '(M)' : '(C)';
+          const realRole = ROLE_NAMES[pr.role] || pr.role;
+          const displayInfo = (pr.displayRole && pr.displayRole !== pr.role)
+            ? ` [표시: ${ROLE_NAMES[pr.displayRole] || pr.displayRole}]`
+            : '';
+          li.innerHTML = `
+            <span>${teamEmoji} ${escapeHtml(pr.playerName)}</span>
+            <span style="font-size:12px;color:var(--text-secondary);">${realRole}${displayInfo} +${pr.pointsEarned}점</span>
+          `;
+          listEl.appendChild(li);
+        });
+      }
+    });
+
+    // Error
+    socket.on('error', (data) => {
+      joinError.textContent = data.message;
+      btnJoin.disabled = false;
+      btnJoin.textContent = '참여하기';
+
+      if (data.code === 'KICKED') {
+        gameView.classList.add('hidden');
+        lobbyView.classList.add('hidden');
+        joinView.classList.remove('hidden');
+        joinError.textContent = '호스트에 의해 퇴장되었습니다.';
+      }
+    });
+
+    // ═══════════════════════════════════════════
+    //  헬퍼 함수
+    // ═══════════════════════════════════════════
+
+    function castVote(targetId, btn) {
+      socket.emit('vote:cast', { targetPlayerId: targetId });
+      document.querySelectorAll('#vote-list button').forEach(b => {
+        b.disabled = true;
+        b.classList.remove('btn-primary');
+        b.classList.add('btn-secondary');
+      });
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-primary');
+    }
+
+    function castKillSave(vote) {
+      socket.emit('vote:cast', { targetPlayerId: vote });
+      document.querySelectorAll('#kill-save-panel button').forEach(b => b.disabled = true);
+    }
+    window.castKillSave = castKillSave;
+
+    function requestSkip() {
+      socket.emit('skip:vote');
+      const btn = document.getElementById('btn-skip-vote');
+      btn.disabled = true;
+      btn.textContent = '스킵 요청됨';
+    }
+    window.requestSkip = requestSkip;
+
+    function activateDoubleVote() {
+      socket.emit('double_vote:activate');
+      doubleVoteAvailable = false;
+      const btn = document.getElementById('btn-double-vote');
+      btn.disabled = true;
+      btn.textContent = '더블 투표 활성화됨!';
+      document.getElementById('double-vote-wrapper').classList.add('hidden');
+    }
+    window.activateDoubleVote = activateDoubleVote;
+
+    function commitImmigrant() {
+      socket.emit('immigrant:commit');
+      document.getElementById('btn-immigrant-commit').disabled = true;
+      document.getElementById('btn-immigrant-commit').textContent = '헌신 중...';
+    }
+    window.commitImmigrant = commitImmigrant;
+
+    function selectAbilityTarget(playerId, btn, abilityData) {
+      selectedTargets.push(playerId);
+      btn.classList.remove('btn-secondary');
+      btn.classList.add('btn-primary');
+      btn.disabled = true;
+
+      if (selectedTargets.length >= abilityData.targetCount) {
+        socket.emit('ability:use', {
+          abilityId: abilityData.abilityId,
+          targets: selectedTargets,
+        });
+        document.querySelectorAll('#ability-targets button').forEach(b => b.disabled = true);
+      }
+    }
+
+    function skipAbility() {
+      socket.emit('ability:skip');
+      document.getElementById('ability-panel').classList.add('hidden');
+    }
+    window.skipAbility = skipAbility;
+
+    function hideActionPanels() {
+      ['vote-panel', 'kill-save-panel', 'ability-panel',
+       'dawn-panel', 'vote-result-panel', 'gameover-panel',
+       'double-vote-wrapper'].forEach(id => {
+        document.getElementById(id).classList.add('hidden');
+      });
+    }
+
+    function formatTime(seconds) {
+      if (!seconds && seconds !== 0) return '--:--';
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

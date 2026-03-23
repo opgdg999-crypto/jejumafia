@@ -1,0 +1,467 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>제주 마피아 - 호스트</title>
+  <link rel="stylesheet" href="/shared/styles/common.css">
+  <style>
+    .config-section {
+      margin-top: 16px;
+    }
+    .config-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 0;
+    }
+    .config-row label {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    .config-row input[type="number"] {
+      width: 80px;
+      text-align: center;
+    }
+    .player-count {
+      font-size: 14px;
+      color: var(--text-secondary);
+    }
+    #lobby-section, #game-section {
+      display: none;
+    }
+    .start-section {
+      margin-top: 24px;
+    }
+    .timer-config {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 12px;
+    }
+    .timer-field {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+    }
+    .timer-field label {
+      font-size: 12px;
+      color: var(--text-secondary);
+    }
+    .timer-field input {
+      padding: 8px;
+      font-size: 14px;
+      text-align: center;
+    }
+    .mode-toggle {
+      display: flex;
+      gap: 8px;
+      margin-top: 8px;
+    }
+    .mode-toggle button {
+      flex: 1;
+      padding: 10px;
+      border: 1px solid var(--border);
+      background: var(--bg-surface);
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .mode-toggle button.active {
+      background: var(--primary);
+      color: white;
+      border-color: var(--primary);
+    }
+  </style>
+</head>
+<body>
+  <div class="container wide">
+    <div class="header">
+      <h1>제주 마피아</h1>
+      <span id="room-status" class="badge" style="background: var(--text-muted); color: white;">대기 중</span>
+    </div>
+
+    <!-- Create Room Section -->
+    <div id="create-section">
+      <div class="card text-center">
+        <h2 class="mb-16">새 게임 방 만들기</h2>
+        <button id="btn-create-room" class="btn btn-primary">방 생성</button>
+      </div>
+    </div>
+
+    <!-- Lobby Section -->
+    <div id="lobby-section">
+      <div class="card text-center">
+        <p class="label">방 코드</p>
+        <div id="room-code" class="room-code">----</div>
+        <div id="qr-code" class="qr-container"></div>
+      </div>
+
+      <div class="card">
+        <div class="flex justify-between items-center mb-16">
+          <h3>참가자</h3>
+          <span id="player-count" class="player-count">0 / 16</span>
+        </div>
+        <ul id="player-list" class="player-list"></ul>
+      </div>
+
+      <!-- Timer Config -->
+      <div class="card">
+        <h3 class="mb-8">타이머 설정 (초)</h3>
+        <div class="timer-config">
+          <div class="timer-field">
+            <label>낮 토론 (초기)</label>
+            <input type="number" id="timer-day" value="480" min="60" max="600" step="30">
+          </div>
+          <div class="timer-field">
+            <label>라운드당 감소</label>
+            <input type="number" id="timer-decrement" value="60" min="0" max="120" step="10">
+          </div>
+          <div class="timer-field">
+            <label>낮 최소</label>
+            <input type="number" id="timer-day-min" value="180" min="60" max="480" step="30">
+          </div>
+          <div class="timer-field">
+            <label>투표</label>
+            <input type="number" id="timer-vote" value="50" min="10" max="120" step="5">
+          </div>
+          <div class="timer-field">
+            <label>최후 변론</label>
+            <input type="number" id="timer-last-words" value="10" min="5" max="60" step="5">
+          </div>
+          <div class="timer-field">
+            <label>밤</label>
+            <input type="number" id="timer-night" value="60" min="30" max="180" step="10">
+          </div>
+        </div>
+        <button id="btn-save-timers" class="btn btn-secondary btn-sm mt-16">타이머 저장</button>
+      </div>
+
+      <!-- Mafia Count -->
+      <div class="card">
+        <h3 class="mb-8">마피아 인원 수</h3>
+        <div class="config-row">
+          <label>마피아 수</label>
+          <select id="mafia-count-select" style="padding:8px 12px;border-radius:var(--radius-sm);background:var(--bg-surface);color:var(--text-primary);border:1px solid var(--border);font-size:14px;">
+            <option value="auto" selected>자동 (8-9명:2, 10-12명:3, 13-16명:4)</option>
+            <option value="2">2명</option>
+            <option value="3">3명</option>
+            <option value="4">4명</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Assignment Mode -->
+      <div class="card">
+        <h3 class="mb-8">역할 배정 방식</h3>
+        <div class="mode-toggle">
+          <button id="mode-auto" class="active" data-mode="auto">자동 (랜덤)</button>
+          <button id="mode-manual" data-mode="manual">수동</button>
+        </div>
+      </div>
+
+      <!-- Start Game -->
+      <div class="start-section">
+        <button id="btn-start-game" class="btn btn-primary" disabled>
+          게임 시작
+        </button>
+        <p id="start-error" class="text-center mt-8" style="color: var(--danger); font-size: 14px;"></p>
+      </div>
+    </div>
+
+    <!-- Game Section -->
+    <div id="game-section">
+      <!-- Phase + Timer -->
+      <div id="host-phase-banner" class="phase-banner phase-day">게임 진행 중</div>
+      <div id="host-timer" class="timer-display mb-16">--:--</div>
+
+      <!-- Controls -->
+      <div class="card">
+        <h3 class="mb-8">게임 컨트롤</h3>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <button class="btn btn-secondary btn-sm" onclick="socket.emit('host:pause_timer')">일시정지</button>
+          <button class="btn btn-secondary btn-sm" onclick="socket.emit('host:resume_timer')">재개</button>
+          <button class="btn btn-primary btn-sm" onclick="socket.emit('host:advance_phase')">다음 페이즈</button>
+          <button class="btn btn-danger btn-sm" onclick="if(confirm('게임을 종료하시겠습니까?'))socket.emit('host:end_game')">게임 종료</button>
+        </div>
+      </div>
+
+      <!-- Player Status -->
+      <div class="card">
+        <h3 class="mb-8">플레이어 현황</h3>
+        <ul id="game-player-list" class="player-list"></ul>
+      </div>
+
+      <!-- Vote Result -->
+      <div id="host-vote-result" class="card hidden">
+        <h3 class="mb-8">투표 결과</h3>
+        <div id="host-vote-counts"></div>
+      </div>
+
+      <!-- Dawn Results -->
+      <div id="host-dawn-result" class="card hidden">
+        <h3 class="mb-8">밤 결과</h3>
+        <div id="host-dawn-info"></div>
+      </div>
+
+      <!-- Game Over -->
+      <div id="host-gameover" class="card hidden">
+        <h2 class="text-center mb-8">게임 종료</h2>
+        <p id="host-gameover-text" class="text-center" style="font-size:24px;font-weight:800;"></p>
+        <p id="host-gameover-reason" class="text-center mt-8" style="color:var(--text-secondary);"></p>
+        <button class="btn btn-primary mt-16" onclick="socket.emit('host:next_game')">다음 게임</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    let currentRoomCode = null;
+
+    // Elements
+    const createSection = document.getElementById('create-section');
+    const lobbySection = document.getElementById('lobby-section');
+    const gameSection = document.getElementById('game-section');
+    const roomCodeEl = document.getElementById('room-code');
+    const qrCodeEl = document.getElementById('qr-code');
+    const playerListEl = document.getElementById('player-list');
+    const playerCountEl = document.getElementById('player-count');
+    const btnCreateRoom = document.getElementById('btn-create-room');
+    const btnStartGame = document.getElementById('btn-start-game');
+    const btnSaveTimers = document.getElementById('btn-save-timers');
+    const startErrorEl = document.getElementById('start-error');
+    const roomStatusEl = document.getElementById('room-status');
+
+    // Create Room
+    btnCreateRoom.addEventListener('click', () => {
+      socket.emit('room:create');
+    });
+
+    socket.on('room:created', (data) => {
+      currentRoomCode = data.roomCode;
+      roomCodeEl.textContent = data.roomCode;
+      qrCodeEl.innerHTML = '<img src="' + data.qrCodeDataUrl + '" alt="QR Code" width="200">';
+      createSection.style.display = 'none';
+      lobbySection.style.display = 'block';
+      roomStatusEl.textContent = '로비';
+      roomStatusEl.style.background = 'var(--secondary)';
+    });
+
+    // Player List
+    socket.on('room:player_list', (players) => {
+      playerListEl.innerHTML = '';
+      players.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'player-item';
+        li.innerHTML = `
+          <span class="player-name">${escapeHtml(p.name)}</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="player-status ${p.isConnected ? 'status-connected' : 'status-disconnected'}">
+              ${p.isConnected ? '접속' : '끊김'}
+            </span>
+            <button class="btn btn-danger btn-sm" onclick="kickPlayer('${p.playerId}')">퇴장</button>
+          </div>
+        `;
+        playerListEl.appendChild(li);
+      });
+      playerCountEl.textContent = players.length + ' / 16';
+
+      // Enable start if >= 8 players
+      btnStartGame.disabled = players.length < 8;
+      if (players.length < 8) {
+        startErrorEl.textContent = '최소 8명이 필요합니다. (현재 ' + players.length + '명)';
+      } else {
+        startErrorEl.textContent = '';
+      }
+    });
+
+    function kickPlayer(playerId) {
+      socket.emit('room:kick_player', playerId);
+    }
+
+    // Timer Config
+    btnSaveTimers.addEventListener('click', () => {
+      socket.emit('room:update_config', {
+        timers: {
+          dayBase: parseInt(document.getElementById('timer-day').value),
+          dayDecrement: parseInt(document.getElementById('timer-decrement').value),
+          dayMinimum: parseInt(document.getElementById('timer-day-min').value),
+          vote: parseInt(document.getElementById('timer-vote').value),
+          lastWords: parseInt(document.getElementById('timer-last-words').value),
+          night: parseInt(document.getElementById('timer-night').value),
+        }
+      });
+      btnSaveTimers.textContent = '저장됨!';
+      setTimeout(() => { btnSaveTimers.textContent = '타이머 저장'; }, 1500);
+    });
+
+    // Mafia Count
+    document.getElementById('mafia-count-select').addEventListener('change', (e) => {
+      const value = e.target.value === 'auto' ? 'auto' : parseInt(e.target.value);
+      socket.emit('room:update_config', { mafiaCount: value });
+    });
+
+    // Assignment Mode
+    document.querySelectorAll('.mode-toggle button').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('.mode-toggle button').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        socket.emit('room:update_config', { assignmentMode: btn.dataset.mode });
+      });
+    });
+
+    // Start Game
+    btnStartGame.addEventListener('click', () => {
+      socket.emit('host:start_game');
+    });
+
+    socket.on('game:started', () => {
+      lobbySection.style.display = 'none';
+      gameSection.style.display = 'block';
+      roomStatusEl.textContent = '게임 중';
+      roomStatusEl.style.background = 'var(--danger)';
+    });
+
+    // Phase
+    const phaseNames = {
+      lobby: '로비', day_discussion: '낮 토론', day_vote: '투표',
+      day_vote_revote: '재투표', day_kill_save_vote: '죽여/살려',
+      day_last_words: '최후 변론', night_abilities: '밤',
+      night_reporter_investigation: '기자 취재',
+      dawn_reveal: '결과 발표', game_over: '게임 종료',
+    };
+
+    socket.on('phase:changed', (phase) => {
+      const banner = document.getElementById('host-phase-banner');
+      if (banner) {
+        banner.textContent = phaseNames[phase.type] || phase.type;
+        if (phase.type.startsWith('night')) banner.className = 'phase-banner phase-night';
+        else if (phase.type.includes('vote')) banner.className = 'phase-banner phase-vote';
+        else banner.className = 'phase-banner phase-day';
+      }
+      const timer = document.getElementById('host-timer');
+      if (timer) timer.textContent = formatTime(phase.timerRemaining);
+    });
+
+    socket.on('phase:timer_tick', (remaining) => {
+      const timer = document.getElementById('host-timer');
+      if (timer) timer.textContent = formatTime(remaining);
+    });
+
+    // Vote results
+    socket.on('vote:count_update', (data) => {
+      // 호스트에서 실시간 카운트 표시
+    });
+
+    socket.on('vote:result', (data) => {
+      const panel = document.getElementById('host-vote-result');
+      panel.classList.remove('hidden');
+      const countsEl = document.getElementById('host-vote-counts');
+      if (data.outcome === 'kill') {
+        countsEl.innerHTML = `<p style="color:var(--danger);font-weight:700;">${escapeHtml(data.eliminatedName || '???')}님 처형</p>`;
+      } else if (data.outcome === 'save') {
+        countsEl.innerHTML = '<p style="color:var(--success);">아무도 처형되지 않았습니다.</p>';
+      } else {
+        countsEl.innerHTML = '<p style="color:var(--warning);">동률 → 재투표</p>';
+      }
+      setTimeout(() => panel.classList.add('hidden'), 5000);
+    });
+
+    // Game player list (in-game)
+    socket.on('room:player_list', (players) => {
+      // 로비 플레이어 리스트
+      playerListEl.innerHTML = '';
+      players.forEach(p => {
+        const li = document.createElement('li');
+        li.className = 'player-item';
+        li.innerHTML = `
+          <span class="player-name">${escapeHtml(p.name)}</span>
+          <div style="display:flex;gap:8px;align-items:center;">
+            <span class="player-status ${p.isAlive ? (p.isConnected ? 'status-connected' : 'status-disconnected') : 'status-dead'}">
+              ${p.isAlive ? (p.isConnected ? '접속' : '끊김') : '사망'}
+            </span>
+            <button class="btn btn-danger btn-sm" onclick="kickPlayer('${p.playerId}')">퇴장</button>
+          </div>
+        `;
+        playerListEl.appendChild(li);
+      });
+      playerCountEl.textContent = players.length + ' / 16';
+      btnStartGame.disabled = players.length < 8;
+      startErrorEl.textContent = players.length < 8 ? `최소 8명이 필요합니다. (현재 ${players.length}명)` : '';
+
+      // 게임 중 플레이어 리스트
+      const gameList = document.getElementById('game-player-list');
+      if (gameList) {
+        gameList.innerHTML = '';
+        players.forEach(p => {
+          const li = document.createElement('li');
+          li.className = 'player-item';
+          li.style.opacity = p.isAlive ? '1' : '0.4';
+          li.innerHTML = `
+            <span class="player-name" style="${p.isAlive ? '' : 'text-decoration:line-through'}">${escapeHtml(p.name)}</span>
+            <span class="player-status ${p.isAlive ? 'status-connected' : 'status-dead'}">
+              ${p.isAlive ? '생존' : '사망'}
+            </span>
+          `;
+          gameList.appendChild(li);
+        });
+      }
+    });
+
+    // Dawn results
+    socket.on('dawn:results', (data) => {
+      const panel = document.getElementById('host-dawn-result');
+      panel.classList.remove('hidden');
+      const info = document.getElementById('host-dawn-info');
+      if (data.deaths.length === 0) {
+        info.innerHTML = '<p style="color:var(--success);">평화로운 밤이었습니다.</p>';
+      } else {
+        info.innerHTML = data.deaths.map(d =>
+          `<p style="color:var(--danger);">${escapeHtml(d.playerName)} - ${d.cause}</p>`
+        ).join('');
+      }
+      setTimeout(() => panel.classList.add('hidden'), 5000);
+    });
+
+    // Game over
+    socket.on('game:over', (data) => {
+      const panel = document.getElementById('host-gameover');
+      panel.classList.remove('hidden');
+      const text = document.getElementById('host-gameover-text');
+      text.textContent = data.winner === 'mafia' ? '마피아 승리!' : '시민 승리!';
+      text.style.color = data.winner === 'mafia' ? 'var(--danger)' : 'var(--success)';
+      document.getElementById('host-gameover-reason').textContent = data.reason;
+    });
+
+    // Error
+    socket.on('error', (data) => {
+      startErrorEl.textContent = data.message;
+    });
+
+    // Config updated
+    socket.on('room:config_updated', (config) => {
+      document.getElementById('timer-day').value = config.timers.dayBase;
+      document.getElementById('timer-decrement').value = config.timers.dayDecrement;
+      document.getElementById('timer-day-min').value = config.timers.dayMinimum;
+      document.getElementById('timer-vote').value = config.timers.vote;
+      document.getElementById('timer-last-words').value = config.timers.lastWords;
+      document.getElementById('timer-night').value = config.timers.night;
+      document.getElementById('mafia-count-select').value = config.mafiaCount || 'auto';
+    });
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

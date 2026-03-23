@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>제주 마피아 - 모니터</title>
+  <link rel="stylesheet" href="/shared/styles/common.css">
+  <style>
+    body {
+      background: var(--bg-dark);
+      overflow: hidden;
+    }
+    .monitor-container {
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      padding: 32px;
+    }
+    .monitor-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 24px;
+    }
+    .monitor-header h1 {
+      font-size: 36px;
+    }
+    .monitor-room-code {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--primary);
+      letter-spacing: 4px;
+    }
+    .monitor-body {
+      display: flex;
+      flex: 1;
+      gap: 32px;
+      min-height: 0;
+    }
+    .monitor-left {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+    }
+    .monitor-right {
+      width: 320px;
+      display: flex;
+      flex-direction: column;
+    }
+    .monitor-timer {
+      font-size: 120px;
+      font-weight: 900;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      line-height: 1;
+    }
+    .monitor-phase {
+      text-align: center;
+      font-size: 32px;
+      font-weight: 700;
+      margin-top: 16px;
+      padding: 12px 24px;
+      border-radius: var(--radius);
+    }
+    .monitor-qr {
+      text-align: center;
+      margin-bottom: 24px;
+    }
+    .monitor-qr img {
+      border-radius: var(--radius);
+      background: white;
+      padding: 8px;
+    }
+    .monitor-qr p {
+      color: var(--text-secondary);
+      font-size: 14px;
+      margin-top: 8px;
+    }
+    .monitor-players {
+      flex: 1;
+      overflow-y: auto;
+    }
+    .monitor-players h3 {
+      font-size: 18px;
+      margin-bottom: 12px;
+      color: var(--text-secondary);
+    }
+    .monitor-player-item {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid var(--border);
+      font-size: 16px;
+    }
+    .monitor-player-item.dead {
+      opacity: 0.4;
+      text-decoration: line-through;
+    }
+    .join-prompt {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      text-align: center;
+    }
+    .join-prompt h1 {
+      font-size: 48px;
+      margin-bottom: 24px;
+    }
+    .join-prompt input {
+      width: 200px;
+      text-align: center;
+      font-size: 32px;
+      font-weight: 700;
+      letter-spacing: 6px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+    }
+  </style>
+</head>
+<body>
+  <!-- Join Prompt -->
+  <div id="join-prompt" class="join-prompt">
+    <h1>제주 마피아</h1>
+    <p style="color: var(--text-secondary); font-size: 18px; margin-bottom: 24px;">방 코드를 입력하세요</p>
+    <input type="text" id="monitor-room-code" maxlength="4" placeholder="CODE" autocomplete="off">
+    <button id="btn-monitor-join" class="btn btn-primary" style="width: 200px;">연결</button>
+    <p id="monitor-error" class="error-msg" style="margin-top: 12px;"></p>
+  </div>
+
+  <!-- Monitor View -->
+  <div id="monitor-view" class="hidden">
+    <div class="monitor-container">
+      <div class="monitor-header">
+        <h1>제주 마피아</h1>
+        <span id="display-room-code" class="monitor-room-code"></span>
+      </div>
+      <div class="monitor-body">
+        <div class="monitor-left">
+          <div id="monitor-timer" class="monitor-timer">--:--</div>
+          <div id="monitor-phase" class="monitor-phase phase-day">로비</div>
+        </div>
+        <div class="monitor-right">
+          <div id="monitor-qr-section" class="monitor-qr"></div>
+          <div class="monitor-players">
+            <h3>참가자 <span id="monitor-player-count">0</span>명</h3>
+            <div id="monitor-player-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+
+    const joinPrompt = document.getElementById('join-prompt');
+    const monitorView = document.getElementById('monitor-view');
+    const monitorRoomCode = document.getElementById('monitor-room-code');
+    const btnMonitorJoin = document.getElementById('btn-monitor-join');
+    const monitorError = document.getElementById('monitor-error');
+
+    // Auto-fill from URL
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomFromUrl = urlParams.get('room');
+    if (roomFromUrl) {
+      monitorRoomCode.value = roomFromUrl.toUpperCase();
+    }
+
+    btnMonitorJoin.addEventListener('click', () => {
+      const code = monitorRoomCode.value.trim().toUpperCase();
+      if (!code || code.length !== 4) {
+        monitorError.textContent = '방 코드 4자리를 입력하세요.';
+        return;
+      }
+      socket.emit('connection:register', { clientType: 'monitor', roomCode: code });
+    });
+
+    monitorRoomCode.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') btnMonitorJoin.click();
+    });
+
+    socket.on('connection:registered', (data) => {
+      if (data.success) {
+        joinPrompt.classList.add('hidden');
+        monitorView.classList.remove('hidden');
+        document.getElementById('display-room-code').textContent = data.roomCode;
+      }
+    });
+
+    socket.on('monitor:qr_code', (dataUrl) => {
+      const qrSection = document.getElementById('monitor-qr-section');
+      qrSection.innerHTML = '<img src="' + dataUrl + '" width="180"><p>QR 스캔으로 참여</p>';
+    });
+
+    socket.on('room:player_list', (players) => {
+      const listEl = document.getElementById('monitor-player-list');
+      const countEl = document.getElementById('monitor-player-count');
+      countEl.textContent = players.length;
+      listEl.innerHTML = '';
+      players.forEach(p => {
+        const div = document.createElement('div');
+        div.className = 'monitor-player-item' + (p.isAlive ? '' : ' dead');
+        div.innerHTML = `
+          <span>${escapeHtml(p.name)}</span>
+          <span class="player-status ${p.isConnected ? 'status-connected' : 'status-disconnected'}">
+            ${p.isConnected ? '접속' : '끊김'}
+          </span>
+        `;
+        listEl.appendChild(div);
+      });
+    });
+
+    // Phase/Timer updates (Phase 2에서 구현)
+    socket.on('phase:changed', (phase) => {
+      const phaseEl = document.getElementById('monitor-phase');
+      const timerEl = document.getElementById('monitor-timer');
+
+      const phaseNames = {
+        'lobby': '로비',
+        'day_discussion': '낮 토론',
+        'day_vote': '투표',
+        'day_vote_revote': '재투표',
+        'day_kill_save_vote': '죽여/살려',
+        'day_last_words': '최후 변론',
+        'night_abilities': '밤',
+        'night_reporter_investigation': '기자 취재',
+        'dawn_reveal': '결과 발표',
+        'game_over': '게임 종료',
+      };
+
+      phaseEl.textContent = phaseNames[phase.type] || phase.type;
+
+      if (phase.type.startsWith('night')) {
+        phaseEl.className = 'monitor-phase phase-night';
+      } else if (phase.type.includes('vote')) {
+        phaseEl.className = 'monitor-phase phase-vote';
+      } else {
+        phaseEl.className = 'monitor-phase phase-day';
+      }
+
+      timerEl.textContent = formatTime(phase.timerRemaining);
+    });
+
+    socket.on('phase:timer_tick', (remaining) => {
+      document.getElementById('monitor-timer').textContent = formatTime(remaining);
+    });
+
+    socket.on('game:started', () => {
+      document.getElementById('monitor-qr-section').classList.add('hidden');
+    });
+
+    socket.on('error', (data) => {
+      monitorError.textContent = data.message;
+    });
+
+    function formatTime(seconds) {
+      const m = Math.floor(seconds / 60);
+      const s = seconds % 60;
+      return String(m).padStart(2, '0') + ':' + String(s).padStart(2, '0');
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
