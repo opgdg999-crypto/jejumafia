@@ -39,7 +39,7 @@ export const ROLE_META = {
     id: RoleId.BOSS,
     nameKo: '돌하르방 보스',
     team: RoleTeam.MAFIA,
-    description: '매일 밤 한 명을 사살합니다. 보스가 죽으면 마피아 팀이 패배합니다.',
+    description: '매일 밤 한 명을 사살합니다. 게임에 없는 시민 직업 하나를 알고 시작합니다. 보스가 죽으면 마피아 팀이 패배합니다.',
     minPlayers: 0,
     abilities: [{
       id: 'boss_kill', nameKo: '사살', description: '한 명을 선택해 사살합니다.',
@@ -91,11 +91,11 @@ export const ROLE_META = {
     id: RoleId.GOBLIN,
     nameKo: '제주 도깨비',
     team: RoleTeam.MAFIA,
-    description: '한 게임에 한 번, 한 명의 발언을 금지시킵니다.',
+    description: '한 게임에 한 번, 3명을 선택해 사회자에게 알립니다.',
     minPlayers: 0,
     abilities: [{
-      id: 'goblin_silence', nameKo: '침묵', description: '한 명을 선택해 발언을 금지시킵니다.',
-      timing: 'night', frequency: 'once_per_game', targetCount: 1,
+      id: 'goblin_expedition', nameKo: '원정', description: '3명을 선택해 사회자에게 알립니다.',
+      timing: 'night', frequency: 'once_per_game', targetCount: 3,
     }],
   },
   [RoleId.SHIELD]: {
@@ -123,10 +123,10 @@ export const ROLE_META = {
     id: RoleId.DOCTOR,
     nameKo: '곶자왈 의사',
     team: RoleTeam.CITIZEN,
-    description: '한 게임에 한 번, 마피아의 사살 대상을 살립니다.',
+    description: '한 게임에 한 번, 사망한 플레이어를 부활시킵니다. (기자 제외)',
     minPlayers: 0,
     abilities: [{
-      id: 'doctor_save', nameKo: '치료', description: '한 명을 선택해 마피아의 사살로부터 구합니다.',
+      id: 'doctor_revive', nameKo: '부활', description: '사망한 플레이어 한 명을 부활시킵니다. (기자 제외)',
       timing: 'night', frequency: 'once_per_game', targetCount: 1,
     }],
   },
@@ -211,7 +211,7 @@ export const ROLE_META = {
     id: RoleId.VILLAGE_HEAD,
     nameKo: '이장 부씨',
     team: RoleTeam.CITIZEN,
-    description: '게임 시작 시, 시민 한 명의 정체가 제공됩니다.',
+    description: '게임 시작 시, 한 명의 소속 팀(시민/마피아)이 제공됩니다.',
     minPlayers: 12,
     abilities: [{
       id: 'village_head_reveal', nameKo: '정보', description: '시민 한 명의 정체를 알게 됩니다.',

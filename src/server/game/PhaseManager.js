@@ -24,7 +24,7 @@ export class PhaseManager extends EventEmitter {
   }
 
   startGame() {
-    this.transitionTo('day_discussion', 1);
+    this.transitionTo('night_abilities', 1);
   }
 
   transitionTo(type, roundNumber) {

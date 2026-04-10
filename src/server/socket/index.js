@@ -40,7 +40,8 @@ export function setupSocketHandlers(io, gameManager, localIP, port) {
           return;
         }
         if (room.state !== 'lobby') {
-          socket.emit('error', { code: 'GAME_IN_PROGRESS', message: '이미 게임이 진행 중입니다.' });
+          // 게임 진행 중에는 새 플레이어 참여 불가 (재접속은 player:reconnect 사용)
+          socket.emit('error', { code: 'GAME_IN_PROGRESS', message: '이미 게임이 진행 중입니다. 재접속을 시도해주세요.' });
           return;
         }
 
@@ -69,6 +70,79 @@ export function setupSocketHandlers(io, gameManager, localIP, port) {
         console.log(`[참여] ${player.name} → ${room.roomCode} (${room.players.size}명)`);
       } catch (err) {
         socket.emit('error', { code: 'JOIN_FAILED', message: err.message });
+      }
+    });
+
+    // === 플레이어 재접속 ===
+    socket.on('player:reconnect', (data) => {
+      try {
+        const room = gameManager.getRoomByCode(data.roomCode);
+        if (!room) {
+          socket.emit('error', { code: 'ROOM_NOT_FOUND', message: '방을 찾을 수 없습니다.' });
+          return;
+        }
+
+        const player = room.players.get(data.playerId);
+        if (!player) {
+          socket.emit('error', { code: 'PLAYER_NOT_FOUND', message: '플레이어를 찾을 수 없습니다.' });
+          return;
+        }
+
+        // 소켓 정보 갱신
+        const oldSocketId = player.socketId;
+        player.socketId = socket.id;
+        player.isConnected = true;
+        socketMeta.delete(oldSocketId);
+        socketMeta.set(socket.id, { clientType: 'player', roomId: room.roomId, playerId: player.playerId });
+
+        // 소켓 룸 재가입
+        socket.join(`room:${room.roomCode}`);
+        socket.join(`room:${room.roomCode}:players`);
+        socket.join(`room:${room.roomCode}:player:${player.playerId}`);
+
+        // 기본 정보 전송
+        socket.emit('reconnect:success', {
+          playerId: player.playerId,
+          roomCode: room.roomCode,
+          playerName: player.name,
+          state: room.state,
+        });
+
+        // 게임 진행 중이면 현재 상태 재전송
+        if (room.state === 'playing' && room.gameEngine) {
+          const roleToShow = player.displayRole;
+          const meta = ROLE_META[roleToShow] || {
+            nameKo: '시민',
+            team: player.team,
+            description: '특별한 능력이 없는 시민입니다.',
+            abilities: [],
+          };
+
+          const roleData = {
+            role: roleToShow,
+            team: player.team,
+            description: meta.description,
+            abilities: meta.abilities || [],
+          };
+
+          if (player.team === 'mafia') {
+            const mafiaMembers = Array.from(room.players.values())
+              .filter(p => p.team === 'mafia' && p.playerId !== player.playerId)
+              .map(p => ({ playerId: p.playerId, name: p.name }));
+            roleData.teamMembers = mafiaMembers;
+          }
+
+          socket.emit('game:started');
+          socket.emit('game:role_assigned', roleData);
+          socket.emit('phase:changed', room.gameEngine.phaseManager.getPhase());
+        }
+
+        // 플레이어 리스트 업데이트 (전체 방에)
+        io.to(`room:${room.roomCode}`).emit('room:player_list', room.getPublicPlayerList());
+
+        console.log(`[재접속] ${player.name} → ${room.roomCode}`);
+      } catch (err) {
+        socket.emit('error', { code: 'RECONNECT_FAILED', message: err.message });
       }
     });
 
@@ -165,6 +239,16 @@ export function setupSocketHandlers(io, gameManager, localIP, port) {
       room?.gameEngine?.resumeTimer();
     });
 
+    socket.on('host:boss_double_vote', () => {
+      const room = _getRoom(socket);
+      if (!room || !room.gameEngine) return;
+      const boss = Array.from(room.players.values()).find(p => p.role === RoleId.BOSS && p.isAlive);
+      if (boss) {
+        room.gameEngine.handleDoubleVote(boss.playerId);
+        socket.emit('host:boss_double_vote_ok');
+      }
+    });
+
     socket.on('host:end_game', (winner) => {
       const room = _getRoom(socket);
       room?.gameEngine?.forceEndGame(winner);
@@ -177,6 +261,7 @@ export function setupSocketHandlers(io, gameManager, localIP, port) {
         room.gameEngine.destroy();
       }
       room.resetForNewGame();
+      io.to(`room:${room.roomCode}`).emit('game:reset_to_lobby');
       io.to(`room:${room.roomCode}`).emit('room:player_list', room.getPublicPlayerList());
       io.to(`room:${room.roomCode}`).emit('room:info', room.getInfo());
     });
@@ -218,6 +303,33 @@ export function setupSocketHandlers(io, gameManager, localIP, port) {
       if (!meta?.playerId) return;
       const room = gameManager.getRoom(meta.roomId);
       room?.gameEngine?.handleAbilitySkip(meta.playerId);
+    });
+
+    // === 마피아 채팅 (밤 시간만) ===
+    socket.on('mafia:chat', (data) => {
+      const meta = socketMeta.get(socket.id);
+      if (!meta?.playerId) return;
+      const room = gameManager.getRoom(meta.roomId);
+      if (!room || !room.gameEngine) return;
+
+      const player = room.players.get(meta.playerId);
+      if (!player || player.team !== 'mafia') return;
+
+      // 밤 페이즈에서만 허용
+      const phase = room.gameEngine.phaseManager.getPhase();
+      if (!phase.type.startsWith('night')) return;
+
+      // 같은 방 마피아 전원에게 전송
+      const roomKey = `room:${room.roomCode}`;
+      for (const p of room.players.values()) {
+        if (p.team === 'mafia') {
+          io.to(`${roomKey}:player:${p.playerId}`).emit('mafia:chat_message', {
+            senderName: player.name,
+            senderId: player.playerId,
+            message: data.message,
+          });
+        }
+      }
     });
 
     // === 이주민 헌신 ===
@@ -352,6 +464,13 @@ function _bindEngineEvents(io, room, engine) {
     io.to(roomKey).emit('skip:approved');
   });
 
+  // ── 원정 결과 (호스트에게만) ──
+  engine.on('expedition:result', (expeditionTargets) => {
+    io.to(`${roomKey}:host`).emit('host:expedition_result', {
+      targets: expeditionTargets,
+    });
+  });
+
   engine.on('night:started', () => {
     _sendAbilityPrompts(io, room, engine);
   });
@@ -409,9 +528,19 @@ function _sendAbilityPrompts(io, room, engine) {
     });
 
     for (const ability of nightAbilities) {
-      const eligibleTargets = Array.from(room.players.values())
-        .filter(p => p.isAlive && p.playerId !== player.playerId)
-        .map(p => ({ playerId: p.playerId, name: p.name }));
+      let eligibleTargets;
+
+      // 의사: 죽은 플레이어 대상 (기자 제외)
+      if (ability.id === 'doctor_revive') {
+        eligibleTargets = Array.from(room.players.values())
+          .filter(p => !p.isAlive && p.role !== RoleId.REPORTER)
+          .map(p => ({ playerId: p.playerId, name: p.name }));
+        if (eligibleTargets.length === 0) continue; // 부활 대상 없으면 스킵
+      } else {
+        eligibleTargets = Array.from(room.players.values())
+          .filter(p => p.isAlive && p.playerId !== player.playerId)
+          .map(p => ({ playerId: p.playerId, name: p.name }));
+      }
 
       io.to(`${roomKey}:player:${player.playerId}`).emit('ability:prompt', {
         abilityId: ability.id,

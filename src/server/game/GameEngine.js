@@ -150,16 +150,29 @@ export class GameEngine extends EventEmitter {
         roleData.teamMembers = mafiaMembers.filter(m => m.playerId !== player.playerId);
       }
 
-      // 이장 부씨: 시민 한 명 공개
+      // 보스: 미등장 시민 직업 하나 공개
+      if (player.role === RoleId.BOSS) {
+        const assignedRoles = new Set(Array.from(this.players.values()).map(p => p.role));
+        const absentCitizenRoles = Object.values(ROLE_META)
+          .filter(r => r.team === RoleTeam.CITIZEN)
+          .map(r => r.id)
+          .filter(id => !assignedRoles.has(id));
+        if (absentCitizenRoles.length > 0) {
+          const pick = absentCitizenRoles[Math.floor(Math.random() * absentCitizenRoles.length)];
+          roleData.absentCitizenRole = { roleId: pick, nameKo: ROLE_META[pick].nameKo };
+        }
+      }
+
+      // 이장 부씨: 한 명의 소속 팀만 공개 (몽생이 제외)
       if (player.role === RoleId.VILLAGE_HEAD) {
-        const citizens = Array.from(this.players.values())
-          .filter(p => p.team === 'citizen' && p.playerId !== player.playerId && p.role !== RoleId.MONGSENGI);
-        if (citizens.length > 0) {
-          const revealed = citizens[Math.floor(Math.random() * citizens.length)];
+        const others = Array.from(this.players.values())
+          .filter(p => p.playerId !== player.playerId && p.role !== RoleId.MONGSENGI);
+        if (others.length > 0) {
+          const revealed = others[Math.floor(Math.random() * others.length)];
           roleData.knownCitizen = {
             playerId: revealed.playerId,
             name: revealed.name,
-            role: revealed.role,
+            team: revealed.team,
           };
         }
       }
@@ -288,18 +301,23 @@ export class GameEngine extends EventEmitter {
     const phase = this.phaseManager.getPhase();
 
     if (phase.type === 'day_kill_save_vote') {
+      // 대상자 본인은 투표 불가
+      if (playerId === phase.voteTargets?.[0]) return;
       this.voteManager.castKillSaveVote(playerId, targetId);
     } else {
       this.voteManager.castVote(playerId, targetId);
     }
 
-    // 투표 현황 업데이트
-    const allPlayers = Array.from(this.players.values());
-    const status = this.voteManager.getVoteStatus(allPlayers.length);
+    // 투표 현황 업데이트 (생존자 기준, kill_save 시 대상자 제외)
+    const alivePlayers = Array.from(this.players.values()).filter(p => p.isAlive);
+    const voters = phase.type === 'day_kill_save_vote'
+      ? alivePlayers.filter(p => p.playerId !== phase.voteTargets?.[0])
+      : alivePlayers;
+    const status = this.voteManager.getVoteStatus(voters.length);
     this.emit('vote:count_update', status);
 
-    // 모든 플레이어가 투표했으면 즉시 종료
-    if (this.voteManager.hasEveryoneVoted(allPlayers)) {
+    // 모든 투표 대상자가 투표했으면 즉시 종료
+    if (this.voteManager.hasEveryoneVoted(voters)) {
       this.phaseManager.advancePhase();
     }
   }
@@ -481,6 +499,11 @@ export class GameEngine extends EventEmitter {
     // 침묵 알림
     if (result.silencedPlayers.length > 0) {
       this.emit('silence:applied', result.silencedPlayers);
+    }
+
+    // 원정 결과 (호스트에게만)
+    if (result.expeditionTargets.length > 0) {
+      this.emit('expedition:result', result.expeditionTargets);
     }
 
     // 밤 사망 기자 체크

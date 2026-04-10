@@ -12,7 +12,11 @@ const __dirname = path.dirname(__filename);
 
 const app = express();
 const httpServer = createServer(app);
-const io = new Server(httpServer, { cors: { origin: '*' } });
+const io = new Server(httpServer, {
+  cors: { origin: '*' },
+  pingInterval: 25000,
+  pingTimeout: 60000,
+});
 
 const PORT = parseInt(process.env.PORT || '3000', 10);
 const localIP = getLocalIP();

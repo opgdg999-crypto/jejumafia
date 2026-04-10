@@ -221,6 +221,9 @@
 
   <!-- Game View -->
   <div id="game-view" class="hidden" style="width:100%;max-width:400px;">
+    <!-- My Name Display -->
+    <div id="my-name-display" style="text-align:center;font-size:20px;font-weight:700;margin-bottom:8px;color:var(--primary);"></div>
+
     <!-- Phase Banner + Timer -->
     <div id="game-phase-banner" class="phase-banner phase-day">로비</div>
     <div id="game-timer" class="timer-display mb-16" style="font-size:48px;">--:--</div>
@@ -255,7 +258,7 @@
         <strong>마피아 동료:</strong> <span id="team-members-list"></span>
       </div>
       <div id="role-known-citizen" class="known-citizen-info hidden">
-        <strong>확인된 시민:</strong> <span id="known-citizen-text"></span>
+        <strong>소속 확인:</strong> <span id="known-citizen-text"></span>
       </div>
     </div>
 
@@ -282,6 +285,16 @@
       </div>
     </div>
 
+    <!-- Mafia Chat (밤 시간만) -->
+    <div id="mafia-chat-panel" class="card hidden">
+      <h3 class="mb-8" style="color:var(--danger);">마피아 채팅</h3>
+      <div id="mafia-chat-messages" style="max-height:150px;overflow-y:auto;font-size:13px;margin-bottom:8px;border:1px solid var(--border);border-radius:var(--radius-sm);padding:8px;background:var(--bg-surface);"></div>
+      <div style="display:flex;gap:8px;">
+        <input type="text" id="mafia-chat-input" placeholder="메시지 입력..." maxlength="100" style="flex:1;" autocomplete="off">
+        <button class="btn btn-danger btn-sm" onclick="sendMafiaChat()">전송</button>
+      </div>
+    </div>
+
     <!-- Ability Panel -->
     <div id="ability-panel" class="card hidden">
       <h3 class="mb-8" id="ability-title">능력 사용</h3>
@@ -304,6 +317,7 @@
     <div id="vote-result-panel" class="card hidden">
       <h3 class="mb-8 text-center">투표 결과</h3>
       <p id="vote-result-text" class="text-center" style="font-size:18px;font-weight:700;"></p>
+      <div id="vote-result-counts" style="margin-top:8px;font-size:14px;color:var(--text-secondary);text-align:center;"></div>
     </div>
 
     <!-- Game Over -->
@@ -317,7 +331,13 @@
 
   <script src="/socket.io/socket.io.js"></script>
   <script>
-    const socket = io();
+    const socket = io({
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 1000,
+      reconnectionDelayMax: 5000,
+      timeout: 20000,
+    });
     let myPlayerId = null;
     let myName = '';
     let myRole = null;
@@ -335,6 +355,57 @@
     const inputName = document.getElementById('input-name');
     const btnJoin = document.getElementById('btn-join');
     const joinError = document.getElementById('join-error');
+
+    // ═══════════════════════════════════════════
+    //  재접속 로직
+    // ═══════════════════════════════════════════
+
+    // 페이지 로드 시 sessionStorage에서 재접속 시도
+    const savedPlayerId = sessionStorage.getItem('playerId');
+    const savedRoomCode = sessionStorage.getItem('roomCode');
+
+    if (savedPlayerId && savedRoomCode) {
+      socket.emit('player:reconnect', { playerId: savedPlayerId, roomCode: savedRoomCode });
+    }
+
+    // Socket.IO 자동 재연결 시
+    socket.on('connect', () => {
+      if (myPlayerId) {
+        const roomCode = sessionStorage.getItem('roomCode');
+        if (roomCode) {
+          socket.emit('player:reconnect', { playerId: myPlayerId, roomCode });
+        }
+      }
+    });
+
+    // 화면 복귀 시 연결 확인
+    document.addEventListener('visibilitychange', () => {
+      if (document.visibilityState === 'visible' && myPlayerId) {
+        if (!socket.connected) {
+          socket.connect();
+        } else {
+          const roomCode = sessionStorage.getItem('roomCode');
+          if (roomCode) {
+            socket.emit('player:reconnect', { playerId: myPlayerId, roomCode });
+          }
+        }
+      }
+    });
+
+    // 재접속 성공 핸들러
+    socket.on('reconnect:success', (data) => {
+      myPlayerId = data.playerId;
+      myName = data.playerName;
+
+      joinView.classList.add('hidden');
+
+      if (data.state === 'lobby') {
+        lobbyView.classList.remove('hidden');
+        gameView.classList.add('hidden');
+        document.getElementById('player-name-display').textContent = myName;
+      }
+      // state === 'playing'이면 game:started와 game:role_assigned가 뒤따라옴
+    });
 
     // Auto-fill room code from URL
     const urlParams = new URLSearchParams(window.location.search);
@@ -422,6 +493,7 @@
     socket.on('game:started', () => {
       lobbyView.classList.add('hidden');
       gameView.classList.remove('hidden');
+      document.getElementById('my-name-display').textContent = myName;
     });
 
     const ROLE_NAMES = {
@@ -462,12 +534,21 @@
           data.teamMembers.map(m => m.name).join(', ');
       }
 
-      // 이장 부씨: 시민 정보
+      // 이장 부씨: 소속 팀 정보
       if (data.knownCitizen) {
         const knownDiv = document.getElementById('role-known-citizen');
         knownDiv.classList.remove('hidden');
+        const teamText = data.knownCitizen.team === 'mafia' ? '마피아' : '시민';
         document.getElementById('known-citizen-text').textContent =
-          `${data.knownCitizen.name} (${ROLE_NAMES[data.knownCitizen.role] || data.knownCitizen.role})`;
+          `${data.knownCitizen.name} → ${teamText}`;
+      }
+
+      // 보스: 미등장 시민 직업 정보
+      if (data.absentCitizenRole) {
+        const knownDiv = document.getElementById('role-known-citizen');
+        knownDiv.classList.remove('hidden');
+        document.getElementById('known-citizen-text').textContent =
+          `이번 게임에 없는 시민 직업: ${data.absentCitizenRole.nameKo}`;
       }
 
       // 더블 투표 가능 여부 (선동꾼, 오일장 고씨)
@@ -531,6 +612,13 @@
         document.getElementById('immigrant-panel').classList.add('hidden');
       }
 
+      // 마피아 채팅 (밤 시간에만)
+      if (phase.type.startsWith('night') && myTeam === 'mafia') {
+        document.getElementById('mafia-chat-panel').classList.remove('hidden');
+      } else {
+        document.getElementById('mafia-chat-panel').classList.add('hidden');
+      }
+
       // 새벽 결과 패널
       if (phase.type === 'dawn_reveal') {
         document.getElementById('dawn-panel').classList.remove('hidden');
@@ -558,6 +646,16 @@
 
       if (data.isKillSaveVote) {
         const panel = document.getElementById('kill-save-panel');
+        // 대상자 본인은 투표 불가
+        if (data.eligibleTargets[0] === myPlayerId) {
+          const infoPanel = document.getElementById('vote-result-panel');
+          infoPanel.classList.remove('hidden');
+          document.getElementById('vote-result-text').textContent = '투표 대상자는 투표할 수 없습니다.';
+          document.getElementById('vote-result-text').style.color = 'var(--text-secondary)';
+          return;
+        }
+        // 버튼 재활성화 (이전 투표에서 disabled된 상태 초기화)
+        panel.querySelectorAll('button').forEach(b => b.disabled = false);
         panel.classList.remove('hidden');
         const targetPlayer = currentPlayers.find(p => p.playerId === data.eligibleTargets[0]);
         document.getElementById('kill-save-target').textContent =
@@ -607,7 +705,25 @@
         text.style.color = 'var(--warning)';
       }
 
-      setTimeout(() => { panel.classList.add('hidden'); }, 3000);
+      // 득표수 표시
+      const countsDiv = document.getElementById('vote-result-counts');
+      countsDiv.innerHTML = '';
+      if (data.counts) {
+        const entries = Object.entries(data.counts);
+        if (entries.length > 0 && (entries[0][0] === 'kill' || entries[0][0] === 'save')) {
+          countsDiv.innerHTML = entries.map(([k, v]) =>
+            `<span style="margin-right:12px;">${k === 'kill' ? '죽여' : '살려'}: ${v}표</span>`
+          ).join('');
+        } else {
+          const sorted = entries.sort((a, b) => b[1] - a[1]);
+          countsDiv.innerHTML = sorted.map(([id, v]) => {
+            const p = currentPlayers.find(pl => pl.playerId === id);
+            return `<div>${escapeHtml(p ? p.name : id)}: ${v}표</div>`;
+          }).join('');
+        }
+      }
+
+      setTimeout(() => { panel.classList.add('hidden'); }, 5000);
     });
 
     // ═══════════════════════════════════════════
@@ -616,9 +732,9 @@
 
     const ABILITY_NAMES = {
       boss_kill: '사살', wind_deceive: '바람', protector_protect: '보호',
-      doctor_save: '치료', police_investigate: '조사', socialite_compare: '비교',
+      doctor_revive: '부활', police_investigate: '조사', socialite_compare: '비교',
       coast_guard_kill: '체포', blocker_block: '봉인', fisherman_check: '확인',
-      goblin_silence: '침묵', mafia_shaman_block: '봉인', assassin_kill: '암살',
+      goblin_expedition: '원정', mafia_shaman_block: '봉인', assassin_kill: '암살',
       fortune_teller_count: '점', reporter_investigate: '취재',
       immigrant_investigate: '조사 (헌신 보상)',
       agitator_double_vote: '선동', double_vote: '추가 투표',
@@ -627,6 +743,8 @@
     socket.on('ability:prompt', (data) => {
       currentAbility = data;
       selectedTargets = [];
+      // 사망한 기자의 조사 등을 위해 다른 패널 숨기기
+      hideActionPanels();
       const panel = document.getElementById('ability-panel');
       panel.classList.remove('hidden');
 
@@ -684,6 +802,7 @@
         fisherman_check: '어부의 확인',
         coast_guard_kill: '해경 체포 결과',
         reporter_investigate: '기자 취재 결과',
+        doctor_revive: '부활 결과',
       };
 
       const label = RESULT_NAMES[data.abilityId] || '능력 결과';
@@ -722,6 +841,38 @@
 
     socket.on('skip:approved', () => {
       document.getElementById('skip-count').textContent = '스킵!';
+    });
+
+    // ═══════════════════════════════════════════
+    //  침묵 + 이주민
+    // ═══════════════════════════════════════════
+
+    // ═══════════════════════════════════════════
+    //  마피아 채팅
+    // ═══════════════════════════════════════════
+
+    socket.on('mafia:chat_message', (data) => {
+      const messagesEl = document.getElementById('mafia-chat-messages');
+      const msgDiv = document.createElement('div');
+      const isMe = data.senderId === myPlayerId;
+      msgDiv.style.cssText = isMe ? 'text-align:right;' : '';
+      msgDiv.innerHTML = `<strong style="color:var(--danger);">${escapeHtml(data.senderName)}</strong>: ${escapeHtml(data.message)}`;
+      messagesEl.appendChild(msgDiv);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+    });
+
+    function sendMafiaChat() {
+      const input = document.getElementById('mafia-chat-input');
+      const msg = input.value.trim();
+      if (!msg) return;
+      socket.emit('mafia:chat', { message: msg });
+      input.value = '';
+    }
+    window.sendMafiaChat = sendMafiaChat;
+
+    // Enter 키로 전송
+    document.getElementById('mafia-chat-input').addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') sendMafiaChat();
     });
 
     // ═══════════════════════════════════════════
@@ -820,6 +971,32 @@
           listEl.appendChild(li);
         });
       }
+    });
+
+    // 다음 게임 (로비로 복귀)
+    socket.on('game:reset_to_lobby', () => {
+      myRole = null;
+      myTeam = null;
+      myRoleData = null;
+      isSilenced = false;
+      doubleVoteAvailable = false;
+      immigrantCommitted = false;
+      currentAbility = null;
+      selectedTargets = [];
+
+      hideActionPanels();
+      document.getElementById('role-card').classList.add('hidden');
+      document.getElementById('ability-result-panel').innerHTML = '';
+      document.getElementById('ability-result-panel').classList.add('hidden');
+      document.getElementById('silence-banner').classList.add('hidden');
+      document.getElementById('immigrant-panel').classList.add('hidden');
+      document.getElementById('role-team-members').classList.add('hidden');
+      document.getElementById('role-known-citizen').classList.add('hidden');
+      document.getElementById('mafia-chat-panel').classList.add('hidden');
+      document.getElementById('mafia-chat-messages').innerHTML = '';
+
+      gameView.classList.add('hidden');
+      lobbyView.classList.remove('hidden');
     });
 
     // Error

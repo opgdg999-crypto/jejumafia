@@ -23,6 +23,7 @@ const PRIORITY = {
   INFO: 50,
   SILENCE: 40,
   REPORTER: 30,
+  REVIVE: 20,
 };
 
 export class AbilityResolver {
@@ -40,11 +41,13 @@ export class AbilityResolver {
     this.blockedPlayers = new Set();
     this.windDeceivedPlayers = new Set();
     this.protectorTarget = null;   // 설문대 할망 보호 대상 (보스 킬만 방어)
-    this.doctorTarget = null;      // 의사 치료 대상 (마피아 킬 전체 방어)
+    this.doctorReviveTarget = null; // 의사 부활 대상
     this.deaths = [];
     this.playerResults = new Map(); // playerId → { abilityId, message, ... }
     this.silencedPlayers = [];
+    this.expeditionTargets = [];
     this.saved = false;
+    this.revived = false;
   }
 
   resolve() {
@@ -59,6 +62,7 @@ export class AbilityResolver {
       saved: this.saved,
       playerResults: this.playerResults,
       silencedPlayers: this.silencedPlayers,
+      expeditionTargets: this.expeditionTargets,
     };
   }
 
@@ -97,7 +101,7 @@ export class AbilityResolver {
       'blocker_block':      PRIORITY.BLOCK,
       'wind_deceive':       PRIORITY.WIND_DECEIVE,
       'protector_protect':  PRIORITY.PROTECTION,
-      'doctor_save':        PRIORITY.PROTECTION,
+      'doctor_revive':      PRIORITY.REVIVE,
       'boss_kill':          PRIORITY.KILL,
       'assassin_kill':      PRIORITY.KILL,
       'coast_guard_kill':   PRIORITY.KILL,
@@ -106,7 +110,7 @@ export class AbilityResolver {
       'socialite_compare':     PRIORITY.INFO,
       'fortune_teller_count':  PRIORITY.INFO,
       'fisherman_check':       PRIORITY.INFO,
-      'goblin_silence':     PRIORITY.SILENCE,
+      'goblin_expedition':  PRIORITY.SILENCE,
       'reporter_investigate': PRIORITY.REPORTER,
     };
     return map[abilityId] || 0;
@@ -142,8 +146,8 @@ export class AbilityResolver {
       case 'protector_protect':
         this._resolveProtect(action);
         break;
-      case 'doctor_save':
-        this._resolveDoctorSave(action);
+      case 'doctor_revive':
+        this._resolveDoctorRevive(action);
         break;
       case 'boss_kill':
         this._resolveBossKill(action);
@@ -167,8 +171,8 @@ export class AbilityResolver {
       case 'fisherman_check':
         this._resolveFishermanCheck(action);
         break;
-      case 'goblin_silence':
-        this._resolveGoblinSilence(action);
+      case 'goblin_expedition':
+        this._resolveGoblinExpedition(action);
         break;
       case 'reporter_investigate':
         this._resolveReporterInvestigate(action);
@@ -203,11 +207,25 @@ export class AbilityResolver {
     }
   }
 
-  _resolveDoctorSave(action) {
+  _resolveDoctorRevive(action) {
     const targetId = action.targets[0];
-    if (targetId) {
-      this.doctorTarget = targetId;
-    }
+    if (!targetId) return;
+
+    const target = this.players.get(targetId);
+    if (!target || target.isAlive) return;
+
+    // 기자는 부활 불가
+    if (target.role === RoleId.REPORTER) return;
+
+    target.isAlive = true;
+    this.revived = true;
+    this.playerResults.set(action.playerId, {
+      abilityId: 'doctor_revive',
+      targetPlayerId: targetId,
+      targetName: target.name,
+      success: true,
+      message: `${target.name}을(를) 부활시켰습니다!`,
+    });
   }
 
   // ── Priority 70: 킬 ───────────────────────────────
@@ -219,8 +237,8 @@ export class AbilityResolver {
     const target = this.players.get(targetId);
     if (!target || !target.isAlive) return;
 
-    // 설문대 할망(보스 킬 전용) 또는 의사(마피아 킬 전체) 가 보호
-    if (this.protectorTarget === targetId || this.doctorTarget === targetId) {
+    // 설문대 할망(보스 킬 전용) 보호
+    if (this.protectorTarget === targetId) {
       this.saved = true;
       return;
     }
@@ -235,11 +253,7 @@ export class AbilityResolver {
     const target = this.players.get(targetId);
     if (!target || !target.isAlive) return;
 
-    // 의사만 암살자 킬도 방어 (설문대 할망은 보스 킬만 방어)
-    if (this.doctorTarget === targetId) {
-      this.saved = true;
-      return;
-    }
+    // 암살자 킬은 보호 불가 (설문대 할망은 보스 킬만 방어)
 
     this._killPlayer(target, 'assassin_kill', '암살자에 의해 사망');
   }
@@ -355,18 +369,16 @@ export class AbilityResolver {
 
   // ── Priority 40: 침묵 ─────────────────────────────
 
-  _resolveGoblinSilence(action) {
-    const targetId = action.targets[0];
-    if (!targetId) return;
-
-    const target = this.players.get(targetId);
-    if (!target || !target.isAlive) return;
-
-    target.isSilenced = true;
-    this.silencedPlayers.push({
-      playerId: targetId,
-      name: target.name,
-    });
+  _resolveGoblinExpedition(action) {
+    for (const targetId of action.targets) {
+      if (!targetId) continue;
+      const target = this.players.get(targetId);
+      if (!target || !target.isAlive) continue;
+      this.expeditionTargets.push({
+        playerId: targetId,
+        name: target.name,
+      });
+    }
   }
 
   // ── Priority 30: 기자 (봉인 불가) ─────────────────

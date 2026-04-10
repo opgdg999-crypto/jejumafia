@@ -187,6 +187,13 @@
         </div>
       </div>
 
+      <!-- Boss Double Vote -->
+      <div id="boss-double-vote-wrapper" class="card hidden">
+        <button id="btn-boss-double-vote" class="btn btn-warning btn-sm" style="width:100%;background:var(--warning);color:#000;font-weight:700;" onclick="activateBossDoubleVote()">
+          보스 투표권 +1
+        </button>
+      </div>
+
       <!-- Player Status -->
       <div class="card">
         <h3 class="mb-8">플레이어 현황</h3>
@@ -250,7 +257,9 @@
     });
 
     // Player List
+    window._lastPlayers = [];
     socket.on('room:player_list', (players) => {
+      window._lastPlayers = players;
       playerListEl.innerHTML = '';
       players.forEach(p => {
         const li = document.createElement('li');
@@ -343,6 +352,16 @@
       }
       const timer = document.getElementById('host-timer');
       if (timer) timer.textContent = formatTime(phase.timerRemaining);
+
+      // 보스 투표권 +1 버튼 (투표 페이즈에서만 표시)
+      const bossWrapper = document.getElementById('boss-double-vote-wrapper');
+      if (phase.type === 'day_vote' || phase.type === 'day_vote_revote') {
+        bossWrapper.classList.remove('hidden');
+        document.getElementById('btn-boss-double-vote').disabled = false;
+        document.getElementById('btn-boss-double-vote').textContent = '보스 투표권 +1';
+      } else {
+        bossWrapper.classList.add('hidden');
+      }
     });
 
     socket.on('phase:timer_tick', (remaining) => {
@@ -359,13 +378,32 @@
       const panel = document.getElementById('host-vote-result');
       panel.classList.remove('hidden');
       const countsEl = document.getElementById('host-vote-counts');
+      let html = '';
       if (data.outcome === 'kill') {
-        countsEl.innerHTML = `<p style="color:var(--danger);font-weight:700;">${escapeHtml(data.eliminatedName || '???')}님 처형</p>`;
+        html = `<p style="color:var(--danger);font-weight:700;">${escapeHtml(data.eliminatedName || '???')}님 처형</p>`;
       } else if (data.outcome === 'save') {
-        countsEl.innerHTML = '<p style="color:var(--success);">아무도 처형되지 않았습니다.</p>';
+        html = '<p style="color:var(--success);">아무도 처형되지 않았습니다.</p>';
       } else {
-        countsEl.innerHTML = '<p style="color:var(--warning);">동률 → 재투표</p>';
+        html = '<p style="color:var(--warning);">동률 → 재투표</p>';
       }
+
+      // 득표수 표시
+      if (data.counts) {
+        const entries = Object.entries(data.counts);
+        if (entries.length > 0 && (entries[0][0] === 'kill' || entries[0][0] === 'save')) {
+          html += '<p style="font-size:14px;color:var(--text-secondary);margin-top:8px;">' +
+            entries.map(([k, v]) => `${k === 'kill' ? '죽여' : '살려'}: ${v}표`).join(' / ') + '</p>';
+        } else {
+          const sorted = entries.sort((a, b) => b[1] - a[1]);
+          html += '<div style="font-size:14px;color:var(--text-secondary);margin-top:8px;">' +
+            sorted.map(([id, v]) => {
+              const p = (window._lastPlayers || []).find(pl => pl.playerId === id);
+              return `<div>${escapeHtml(p ? p.name : id)}: ${v}표</div>`;
+            }).join('') + '</div>';
+        }
+      }
+
+      countsEl.innerHTML = html;
       setTimeout(() => panel.classList.add('hidden'), 5000);
     });
 
@@ -435,6 +473,26 @@
       document.getElementById('host-gameover-reason').textContent = data.reason;
     });
 
+    // 원정 결과 (도깨비)
+    socket.on('host:expedition_result', (data) => {
+      const panel = document.getElementById('host-dawn-result');
+      panel.classList.remove('hidden');
+      const info = document.getElementById('host-dawn-info');
+      const names = data.targets.map(t => escapeHtml(t.name)).join(', ');
+      info.innerHTML = `<p style="color:var(--warning);font-weight:700;">[도깨비 원정] 대상: ${names}</p>`;
+    });
+
+    // 다음 게임 (로비로 복귀)
+    socket.on('game:reset_to_lobby', () => {
+      gameSection.style.display = 'none';
+      lobbySection.style.display = 'block';
+      document.getElementById('host-gameover').classList.add('hidden');
+      document.getElementById('host-dawn-result').classList.add('hidden');
+      document.getElementById('host-vote-result').classList.add('hidden');
+      roomStatusEl.textContent = '로비';
+      roomStatusEl.style.background = 'var(--secondary)';
+    });
+
     // Error
     socket.on('error', (data) => {
       startErrorEl.textContent = data.message;
@@ -449,6 +507,19 @@
       document.getElementById('timer-last-words').value = config.timers.lastWords;
       document.getElementById('timer-night').value = config.timers.night;
       document.getElementById('mafia-count-select').value = config.mafiaCount || 'auto';
+    });
+
+    function activateBossDoubleVote() {
+      socket.emit('host:boss_double_vote');
+      const btn = document.getElementById('btn-boss-double-vote');
+      btn.disabled = true;
+      btn.textContent = '보스 투표권 +1 적용됨';
+    }
+
+    socket.on('host:boss_double_vote_ok', () => {
+      const btn = document.getElementById('btn-boss-double-vote');
+      btn.disabled = true;
+      btn.textContent = '보스 투표권 +1 적용됨';
     });
 
     function formatTime(seconds) {
